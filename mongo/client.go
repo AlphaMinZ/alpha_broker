@@ -1,9 +1,9 @@
 package mongo
 
 import (
-	alphaBroker "alpha-broker"
 	"context"
 
+	alphaBroker "github.com/AlphaMinZ/alpha_broker"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
