@@ -10,8 +10,93 @@ import (
 	alphaBroker "github.com/AlphaMinZ/alpha_broker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+type Tea struct {
+	Type     string
+	Category string
+	Toppings []string
+	Price    float32
+}
+
+/*
+$sum	计算总和。
+$avg	计算平均值
+$min	获取集合中所有文档对应值得最小值。
+$max	获取集合中所有文档对应值得最大值。
+$push	将值加入一个数组中，不会判断是否有重复的值。
+$addToSet	将值加入一个数组中，会判断是否有重复的值，若相同的值在数组中已经存在了，则不加入。
+$first	根据资源文档的排序获取第一个文档数据。
+$last	根据资源文档的排序获取最后一个文档数据
+$match	匹配字段包含目的字段的文档
+$unset	stage 省略 and 字段_idcategory
+$sort	排序
+$limit	显示前两个文档
+*/
+func TestAggregate(t *testing.T) {
+	ctx := context.Background()
+	to := &testOwner{}
+	tc := &Client{
+		BaseComponent: alphaBroker.NewBaseComponent(),
+		RealCli: NewClient(ctx, &Config{
+			URI:         "mongodb://localhost:27017",
+			MinPoolSize: 3,
+			MaxPoolSize: 3000,
+			Credential: options.Credential{
+				Username: "alpha",
+				Password: "883721",
+			},
+		}),
+	}
+	defer tc.RealCli.Disconnect(ctx)
+
+	to.c = tc
+	to.Launch()
+	fn := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		docs := []interface{}{
+			Tea{Type: "Masala", Category: "black", Toppings: []string{"ginger", "pumpkin spice", "cinnamon"}, Price: 6.75},
+			Tea{Type: "Gyokuro", Category: "green", Toppings: []string{"berries", "milk foam"}, Price: 5.65},
+			Tea{Type: "English Breakfast", Category: "black", Toppings: []string{"whipped cream", "honey"}, Price: 5.75},
+			Tea{Type: "Sencha", Category: "green", Toppings: []string{"lemon", "whipped cream"}, Price: 5.15},
+			Tea{Type: "Assam", Category: "black", Toppings: []string{"milk foam", "honey", "berries"}, Price: 5.65},
+			Tea{Type: "Matcha", Category: "green", Toppings: []string{"whipped cream", "honey"}, Price: 6.45},
+			Tea{Type: "Earl Grey", Category: "black", Toppings: []string{"milk foam", "pumpkin spice"}, Price: 6.15},
+			Tea{Type: "Hojicha", Category: "green", Toppings: []string{"lemon", "ginger", "milk foam"}, Price: 5.55},
+		}
+
+		tc.InsertMany(ctx, "alpha_app", "tea", docs)
+
+		groupStage := bson.D{
+			{"$group", bson.D{
+				{"_id", "$category"},
+				{"average_price", bson.D{{"$avg", "$price"}}},
+				{"type_total", bson.D{{"$sum", 1}}},
+			}}}
+
+		cursor, err := tc.Aggregate(ctx, "alpha_app", "tea", mongo.Pipeline{groupStage})
+		var results []bson.M
+		if err = cursor.All(context.TODO(), &results); err != nil {
+			panic(err)
+		}
+		for _, result := range results {
+			fmt.Printf("Average price of %v tea options: $%v \n", result["_id"], result["average_price"])
+			fmt.Printf("Number of %v tea options: %v \n\n", result["_id"], result["type_total"])
+		}
+	}
+	op := alphaBroker.Operation{
+		Cb:  fn,
+		Ret: make(chan interface{}),
+	}
+	to.c.Resolve(op)
+	<-op.Ret // 接受结果信号
+	fmt.Println("op success")
+	time.Sleep(time.Second * 5)
+	to.Stop()
+}
 
 func TestInsertOne(t *testing.T) {
 	ctx := context.Background()
